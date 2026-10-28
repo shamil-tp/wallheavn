@@ -381,179 +381,175 @@
     </footer>
 
     <script>
-        /* =========================================================
-           CONFIGURATION
-           ========================================================= */
-        // Replace this with your Wallhaven API Key for better rate limits.
-        const API_KEY = "PASTE_WALLHAVEN_API_KEY_HERE";
-        const API_BASE_URL = "https://wallhaven.cc/api/v1/search";
+    /* =========================================================
+       CONFIGURATION
+       ========================================================= */
+    const API_BASE_URL = "https://wallheaven.shamiltp.me";
 
-        /* =========================================================
-           STATE & DOM ELEMENTS
-           ========================================================= */
-        let state = {
-            isFetching: false,
-            photoCount: 0,
-            currentPhotoUrl: null
-        };
+    /* =========================================================
+       STATE & DOM ELEMENTS
+       ========================================================= */
+    let state = {
+        isFetching: false,
+        photoCount: 0,
+        currentPhotoUrl: null
+    };
 
-        const DOM = {
-            shutterBtn: document.getElementById('shutter-btn'),
-            statusText: document.getElementById('status-text'),
-            statusDot: document.getElementById('status-dot'),
-            polaroidWrapper: document.getElementById('polaroid-wrapper'),
-            polaroid: document.getElementById('polaroid'),
-            photoImg: document.getElementById('photo-img'),
-            devLayer: document.getElementById('developing-layer'),
-            caption: document.getElementById('caption'),
-            metaRes: document.getElementById('meta-res'),
-            metaId: document.getElementById('meta-id'),
-            counter: document.getElementById('counter'),
-            sourceLink: document.getElementById('source-link'),
-            downloadBtn: document.getElementById('download-btn')
-        };
+    const DOM = {
+        shutterBtn: document.getElementById('shutter-btn'),
+        statusText: document.getElementById('status-text'),
+        statusDot: document.getElementById('status-dot'),
+        polaroidWrapper: document.getElementById('polaroid-wrapper'),
+        polaroid: document.getElementById('polaroid'),
+        photoImg: document.getElementById('photo-img'),
+        devLayer: document.getElementById('developing-layer'),
+        caption: document.getElementById('caption'),
+        metaRes: document.getElementById('meta-res'),
+        metaId: document.getElementById('meta-id'),
+        counter: document.getElementById('counter'),
+        sourceLink: document.getElementById('source-link'),
+        downloadBtn: document.getElementById('download-btn')
+    };
 
-        /* =========================================================
-           LOGIC & INTERACTIONS
-           ========================================================= */
+    /* =========================================================
+       LOGIC & INTERACTIONS
+       ========================================================= */
+    function applyRandomRotation() {
+        const min = -3;
+        const max = 3;
+        const randomDeg = Math.random() * (max - min) + min;
+        DOM.polaroid.style.transform = `rotate(${randomDeg.toFixed(1)}deg)`;
+    }
+
+    function updateStatus(text, mode = 'normal') {
+        DOM.statusText.textContent = text;
+        DOM.statusDot.className = 'status-dot';
+        if (mode === 'active') DOM.statusDot.classList.add('active');
+        if (mode === 'developing') DOM.statusDot.classList.add('developing');
+    }
+
+    async function fetchRandomWallpaper() {
+        if (state.isFetching) return;
         
-        // Randomize polaroid rotation to make it feel physical
-        function applyRandomRotation() {
-            const min = -3;
-            const max = 3;
-            const randomDeg = Math.random() * (max - min) + min;
-            DOM.polaroid.style.transform = `rotate(${randomDeg.toFixed(1)}deg)`;
-        }
+        state.isFetching = true;
+        DOM.shutterBtn.disabled = true;
+        updateStatus('EXPOSING...', 'active');
 
-        function updateStatus(text, mode = 'normal') {
-            DOM.statusText.textContent = text;
-            DOM.statusDot.className = 'status-dot';
-            if (mode === 'active') DOM.statusDot.classList.add('active');
-            if (mode === 'developing') DOM.statusDot.classList.add('developing');
-        }
+        try {
+            const url = new URL(API_BASE_URL);
+            url.searchParams.append('sorting', 'random');
+            url.searchParams.append('purity', '100'); // SFW only
 
-        async function fetchRandomWallpaper() {
-            if (state.isFetching) return;
+            const response = await fetch(url);
             
-            state.isFetching = true;
-            DOM.shutterBtn.disabled = true;
-            updateStatus('EXPOSING...', 'active');
+            if (response.status === 429) {
+                throw new Error("Rate limit exceeded. Please try again later.");
+            }
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status}`);
+            }
 
+            const json = await response.json();
+
+            if (!json.data || json.data.length === 0) {
+                throw new Error("No photographs found.");
+            }
+
+            const photoData = json.data[0];
+            processPhotograph(photoData);
+
+        } catch (error) {
+            console.error(error);
+            updateStatus('ERROR', 'active');
+            alert(error.message);
+            resetCameraReady();
+        }
+    }
+
+    function processPhotograph(photoData) {
+        updateStatus('DEVELOPING...', 'developing');
+        
+        const img = new Image();
+        img.onload = () => {
+            revealPhotograph(photoData);
+        };
+        img.onerror = () => {
+            updateStatus('FILM JAMMED', 'active');
+            resetCameraReady();
+        };
+        img.src = photoData.path;
+    }
+
+    function revealPhotograph(data) {
+        state.photoCount++;
+        state.currentPhotoUrl = data.path;
+        
+        DOM.polaroidWrapper.classList.remove('anim-eject');
+        DOM.photoImg.parentElement.classList.remove('anim-develop');
+        
+        void DOM.polaroidWrapper.offsetWidth;
+
+        DOM.photoImg.src = data.path;
+        DOM.caption.textContent = `#${String(state.photoCount).padStart(3, '0')}`;
+        DOM.metaRes.textContent = `${data.resolution}`;
+        DOM.metaId.textContent = `ID: ${data.id}`;
+        DOM.counter.textContent = String(state.photoCount).padStart(3, '0');
+        
+        DOM.sourceLink.href = data.short_url || data.url;
+        
+        DOM.downloadBtn.href = data.path;
+        DOM.downloadBtn.onclick = async (e) => {
+            e.preventDefault();
             try {
-                // Build URL with safe params
-                const url = new URL(API_BASE_URL);
-                url.searchParams.append('sorting', 'random');
-                url.searchParams.append('purity', '100'); // SFW only
-                if (API_KEY !== "PASTE_WALLHAVEN_API_KEY_HERE") {
-                    url.searchParams.append('apikey', API_KEY);
-                }
-
-                const response = await fetch(url);
-                
-                if (response.status === 429) {
-                    throw new Error("Rate limit exceeded. Please add an API key or try later.");
-                }
-                if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
-                }
-
-                const json = await response.json();
-
-                if (!json.data || json.data.length === 0) {
-                    throw new Error("No photographs found.");
-                }
-
-                const photoData = json.data[0];
-                processPhotograph(photoData);
-
-            } catch (error) {
-                console.error(error);
-                updateStatus('ERROR', 'active');
-                alert(error.message); // Simple fallback for errors
-                resetCameraReady();
+                const response = await fetch(data.path);
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const tempLink = document.createElement('a');
+                tempLink.href = blobUrl;
+                tempLink.download = `wallhaven-${data.id}.jpg`;
+                document.body.appendChild(tempLink);
+                tempLink.click();
+                tempLink.remove();
+                URL.revokeObjectURL(blobUrl);
+            } catch (err) {
+                window.open(data.path, '_blank');
             }
-        }
+        };
 
-        function processPhotograph(photoData) {
-            updateStatus('DEVELOPING...', 'developing');
-            
-            // Preload the image so we don't animate a blank square
-            const img = new Image();
-            img.onload = () => {
-                revealPhotograph(photoData);
-            };
-            img.onerror = () => {
-                updateStatus('FILM JAMMED', 'active');
-                resetCameraReady();
-            };
-            img.src = photoData.path;
-        }
-
-        function revealPhotograph(data) {
-            // Update State
-            state.photoCount++;
-            state.currentPhotoUrl = data.path;
-            
-            // Remove animation classes to restart them
-            DOM.polaroidWrapper.classList.remove('anim-eject');
-            DOM.photoImg.parentElement.classList.remove('anim-develop');
-            
-            // Force reflow
-            void DOM.polaroidWrapper.offsetWidth;
-
-            // Update DOM data
-            DOM.photoImg.src = data.path;
-            DOM.caption.textContent = `#${String(state.photoCount).padStart(3, '0')}`;
-            DOM.metaRes.textContent = `${data.resolution}`;
-            DOM.metaId.textContent = `ID: ${data.id}`;
-            DOM.counter.textContent = String(state.photoCount).padStart(3, '0');
-            
-            DOM.sourceLink.href = data.short_url || data.url;
-            DOM.downloadBtn.href = data.path;
-            DOM.downloadBtn.download = `wallhaven-${data.id}.jpg`;
-
-            // Apply new physical properties
-            applyRandomRotation();
-            DOM.devLayer.style.opacity = '1';
-            
-            // Trigger Animations
-            DOM.polaroidWrapper.classList.add('anim-eject');
-            
-            // Fade out the chemical layer to simulate developing
-            setTimeout(() => {
-                DOM.devLayer.style.opacity = '0';
-                DOM.photoImg.parentElement.classList.add('anim-develop');
-            }, 300);
-
-            // Finish up
-            setTimeout(() => {
-                resetCameraReady();
-            }, 3000); // Wait for develop animation to finish
-        }
-
-        function resetCameraReady() {
-            state.isFetching = false;
-            DOM.shutterBtn.disabled = false;
-            updateStatus('READY');
-        }
-
-        /* =========================================================
-           EVENT LISTENERS
-           ========================================================= */
-        DOM.shutterBtn.addEventListener('click', fetchRandomWallpaper);
-
-        // Keyboard support (Spacebar or Enter triggers the shutter)
-        document.addEventListener('keydown', (e) => {
-            if ((e.code === 'Space' || e.code === 'Enter') && !state.isFetching) {
-                // Prevent scrolling when hitting space
-                if(e.code === 'Space') e.preventDefault(); 
-                fetchRandomWallpaper();
-            }
-        });
-
-        // Initialize first state
         applyRandomRotation();
+        DOM.devLayer.style.opacity = '1';
+        
+        DOM.polaroidWrapper.classList.add('anim-eject');
+        
+        setTimeout(() => {
+            DOM.devLayer.style.opacity = '0';
+            DOM.photoImg.parentElement.classList.add('anim-develop');
+        }, 300);
 
-    </script>
+        setTimeout(() => {
+            resetCameraReady();
+        }, 3000);
+    }
+
+    function resetCameraReady() {
+        state.isFetching = false;
+        DOM.shutterBtn.disabled = false;
+        updateStatus('READY');
+    }
+
+    /* =========================================================
+       EVENT LISTENERS
+       ========================================================= */
+    DOM.shutterBtn.addEventListener('click', fetchRandomWallpaper);
+
+    document.addEventListener('keydown', (e) => {
+        if ((e.code === 'Space' || e.code === 'Enter') && !state.isFetching) {
+            if(e.code === 'Space') e.preventDefault(); 
+            fetchRandomWallpaper();
+        }
+    });
+
+    applyRandomRotation();
+</script>
 </body>
 </html>
